@@ -80,9 +80,29 @@ def plausible(f):
     mid = (f["call"] + f["put"]) / 2
     return all(mid * 0.7 < f[k] < mid * 1.4 for k in ("call", "put", "flip"))
 
+def _load_state_json(raw):
+    """Tolerant OM_STATE parsing: pure JSON first, then the outermost
+    {...} or [...] span (in case something extra got pasted around it).
+    Returns parsed data or raises ValueError with a clear hint."""
+    raw = (raw or "").strip().lstrip("\ufeff")
+    try:
+        return json.loads(raw)
+    except Exception:
+        pass
+    for a, b in (("[", "]"), ("{", "}")):
+        i, j = raw.find(a), raw.rfind(b)
+        if 0 <= i < j:
+            try:
+                return json.loads(raw[i:j + 1])
+            except Exception:
+                continue
+    raise ValueError("OM_STATE is not valid JSON - re-export the cookies "
+                     "with EditThisCookie and paste the whole [...] text again")
+
+
 def build_state_file(raw):
     """Accept storage-state JSON or an EditThisCookie [...] export."""
-    data = json.loads(raw)
+    data = _load_state_json(raw)
     if isinstance(data, dict) and "cookies" in data:
         state = data
     elif isinstance(data, list):
@@ -112,7 +132,10 @@ def main():
     key = os.environ.get("OM_KEY", "").strip()
     if not raw or not url or not key:
         log("ERROR: OM_STATE / OM_URL / OM_KEY secrets are missing"); return 3
-    state_path = build_state_file(raw)
+    try:
+        state_path = build_state_file(raw)
+    except Exception as e:
+        log(f"ERROR: {e}"); return 3
     from playwright.sync_api import sync_playwright
     found, logged_out = None, False
     with sync_playwright() as pw:
