@@ -132,6 +132,11 @@ def main():
     key = os.environ.get("OM_KEY", "").strip()
     if not raw or not url or not key:
         log("ERROR: OM_STATE / OM_URL / OM_KEY secrets are missing"); return 3
+    if "ev1l-3ye" in url or "/api/openmarket" in url:
+        log("ERROR: OM_URL must be your OpenMarket GC CHART page (the page in your "
+            "browser where you SEE the Call Wall / Put Wall / Gamma Flip numbers) - "
+            "not the Ev1L app address. Copy it from your browser address bar.")
+        return 3
     try:
         state_path = build_state_file(raw)
     except Exception as e:
@@ -143,12 +148,19 @@ def main():
         ctx = browser.new_context(storage_state=state_path, viewport={"width": 1440, "height": 900})
         pg = ctx.new_page()
         pg.goto(url, wait_until="domcontentloaded", timeout=120000)
+        try:
+            log(f"opened: title={pg.title()!r} url={pg.url}")
+        except Exception:
+            pass
+        last_got = None
         deadline = time.time() + 120
         while time.time() < deadline:
             try:
                 got = pg.evaluate(EXTRACT_JS)
             except Exception:
                 got = None
+            if got:
+                last_got = got
             if got and plausible(got):
                 found = got; break
             if got and got.get("_loggedOut"):
@@ -159,7 +171,11 @@ def main():
         print("::error::COOKIES EXPIRED — re-export your OpenMarket cookies into the OM_STATE secret (see README).")
         return 2
     if not found:
-        log("ERROR: levels not readable — is the GEX indicator on the chart and visible?")
+        seen = {k: (last_got or {}).get(k) for k in ("call", "put", "flip", "pain")} if last_got else None
+        log(f"ERROR: levels not readable. Numbers found on the page: {seen} — "
+            "open the same chart in your own browser: the GEX indicator with "
+            "Call Wall / Put Wall / Gamma Flip must be VISIBLE on it, and the "
+            "OM_URL secret must be that page's address.")
         return 3
     payload = {"call_wall": found["call"], "put_wall": found["put"], "flip": found["flip"],
                "max_pain": found.get("pain"), "source": "openmarket-actions"}
