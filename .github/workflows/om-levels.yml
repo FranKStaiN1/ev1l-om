@@ -1,0 +1,39 @@
+name: OpenMarket levels
+
+# Reads your OpenMarket GC levels every 15 minutes and sends them to Ev1L 3ye.
+# Keep this repository PUBLIC: public repos get unlimited free Actions minutes.
+# Your cookies/key live ONLY in encrypted Secrets (Settings > Secrets) — never in code.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: om-levels
+  cancel-in-progress: false
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Playwright
+        run: pip install playwright
+      - name: Cache Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-v1
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Read levels and send
+        env:
+          OM_STATE: ${{ secrets.OM_STATE }}
+          OM_URL: ${{ secrets.OM_URL }}
+          OM_KEY: ${{ secrets.OM_KEY }}
+        run: python om_actions_runner.py
